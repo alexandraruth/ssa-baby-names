@@ -1,0 +1,191 @@
+---
+title: "Baby Name Trends"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(DT)
+
+# Assume your dataframe is called 'df'
+# If loading from file, uncomment and adjust:
+load("data/clean_names_bystate.Rda")
+```
+
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+textInput("name_input", "Name:", value = "Clara")
+
+sliderInput("year_range", "Year Range:",
+            min = min(df$year), 
+            max = max(df$year),
+            value = c(min(df$year), max(df$year)),
+            step = 1,
+            sep = "")
+
+radioButtons("metric", "Display:",
+             choices = c("Rates" = "rate", "Counts" = "count"),
+             selected = "rate")
+
+checkboxGroupInput("sex_select", "Sex:",
+                   choices = c("Male" = "M", "Female" = "F", "Both (Combined)" = "Both"),
+                   selected = "Both")
+
+hr()
+
+checkboxInput("select_all_check", "Select All States", value = TRUE)
+
+actionButton("select_all", "Select All States")
+actionButton("unselect_all", "Unselect All States")
+
+checkboxGroupInput("states", "States:",
+                   choices = sort(unique(df$state)),
+                   selected = sort(unique(df$state)))
+
+# Logic for select all checkbox
+observeEvent(input$select_all_check, {
+  if (input$select_all_check) {
+    updateCheckboxGroupInput(session, "states", 
+                            selected = sort(unique(df$state)))
+  }
+})
+
+# Logic for select/unselect all buttons
+observeEvent(input$select_all, {
+  updateCheckboxGroupInput(session, "states", 
+                          selected = sort(unique(df$state)))
+  updateCheckboxInput(session, "select_all_check", value = TRUE)
+})
+
+observeEvent(input$unselect_all, {
+  updateCheckboxGroupInput(session, "states", 
+                          selected = character(0))
+  updateCheckboxInput(session, "select_all_check", value = FALSE)
+})
+
+# Uncheck "select all" if user manually deselects states
+observeEvent(input$states, {
+  if (length(input$states) < length(unique(df$state))) {
+    updateCheckboxInput(session, "select_all_check", value = FALSE)
+  }
+})
+```
+
+Visualization {data-icon="fa-chart-line"}
+-----------------------------------------------------------------------
+
+### Name Trends Over Time
+```{r}
+renderPlotly({
+  # Filter by name, year, and state
+  filtered_data <- df %>%
+    filter(year >= input$year_range[1],
+           year <= input$year_range[2],
+           state %in% input$states,
+           name == input$name_input)
+  
+  # Handle sex selection
+  if ("Both" %in% input$sex_select) {
+    # Sum M and F together
+    filtered_data <- filtered_data %>%
+      group_by(state, year, name) %>%
+      summarize(count = sum(count), .groups = "drop") %>%
+      mutate(sex = "Both")
+  } else {
+    # Filter for selected sexes
+    filtered_data <- filtered_data %>%
+      filter(sex %in% input$sex_select)
+  }
+  
+  # Calculate rates
+  filtered_data <- filtered_data %>%
+    group_by(state, year) %>%
+    mutate(rate = count / sum(count)) %>%
+    ungroup()
+  
+  # Choose metric
+  y_var <- input$metric
+  y_label <- ifelse(y_var == "rate", 
+                    "Rate (Fraction of All Births)", 
+                    "Count")
+  
+  # Create ggplot
+  p <- ggplot(filtered_data, aes(x = year, y = .data[[y_var]], 
+                            color = state, group = state,
+                            text = paste0("State: ", state, 
+                                        "<br>Year: ", year,
+                                        "<br>Sex: ", sex,
+                                        "<br>", y_label, ": ", 
+                                        round(.data[[y_var]], 4)))) +
+    geom_line(linewidth = 1) +
+    labs(title = paste("Trends for", input$name_input),
+         x = "Year",
+         y = y_label,
+         color = "State") +
+    theme_minimal() +
+    theme(legend.position = "right")
+  
+  # Convert to plotly for interactivity
+  ggplotly(p, tooltip = "text") %>%
+    layout(hovermode = "closest")
+})
+```
+
+Data Table {data-icon="fa-table"}
+-----------------------------------------------------------------------
+
+### Summary Data
+```{r}
+renderDT({
+  # Filter by name, year, and state
+  table_data <- df %>%
+    filter(year >= input$year_range[1],
+           year <= input$year_range[2],
+           state %in% input$states,
+           name == input$name_input)
+  
+  # Handle sex selection
+  if ("Both" %in% input$sex_select) {
+    # Sum M and F together
+    table_data <- table_data %>%
+      group_by(state, year, name) %>%
+      summarize(count = sum(count), .groups = "drop") %>%
+      mutate(sex = "Both")
+  } else {
+    # Filter for selected sexes
+    table_data <- table_data %>%
+      filter(sex %in% input$sex_select)
+  }
+  
+  # Calculate rates
+  table_data <- table_data %>%
+    group_by(state, year) %>%
+    mutate(rate = count / sum(count)) %>%
+    ungroup() %>%
+    select(state, year, sex, name, count, rate) %>%
+    arrange(state, year)
+  
+  # Format rate as percentage
+  table_data <- table_data %>%
+    mutate(rate = paste0(round(rate * 100, 3), "%"))
+  
+  # Create interactive table
+  datatable(table_data, 
+            options = list(pageLength = 25,
+                          scrollX = TRUE,
+                          searching = TRUE,
+                          ordering = TRUE),
+            filter = "top",
+            rownames = FALSE,
+            colnames = c("State", "Year", "Sex", "Name", "Count", "Rate (%)"))
+})
+```
