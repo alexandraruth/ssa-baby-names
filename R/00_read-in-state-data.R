@@ -1,8 +1,12 @@
 # read in state data and make tidy dataframe
 
+## RUN ONLY ONCE to generate tidy merged dataframes
+
 library(tidyverse)
 
 # states ----
+
+#example for one state
 AK <- read_csv("data/raw_names_bystate/AK.TXT", col_names = c("state", "sex", "year", "name", "count"))
 
 statenames <- state.abb
