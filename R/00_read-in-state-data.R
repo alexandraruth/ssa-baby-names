@@ -4,9 +4,10 @@
 
 library(tidyverse)
 
-# states ----
+# read in and concatenate national data by year ----
 
 #example for one state
+
 AK <- read_csv("data/raw_names_bystate/AK.TXT", col_names = c("state", "sex", "year", "name", "count"))
 
 statenames <- state.abb
@@ -27,6 +28,5 @@ df <- do.call("rbind",mylist) #combine all vectors into a matrix
 
 save(df, file = "data/clean_names_bystate.Rda")
 
-# years ----
 
 
